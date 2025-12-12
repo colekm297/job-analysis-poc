@@ -18,15 +18,17 @@ INTERVIEWER_SYSTEM_PROMPT = """You are an expert I/O psychologist conducting a j
 RULES:
 - Ask ONE question at a time
 - Keep responses to 2-3 sentences plus your question
-- Probe vague answers with "Can you give a specific example?"
+- Probe vague answers by asking for specific examples
 - Acknowledge good answers briefly, then move on
+- NEVER output coverage status, progress tracking, or any meta-information in your response
+- NEVER use bullet points or lists in your response
+- Just respond conversationally as an interviewer would
 
-COVERAGE STATUS:
-{coverage}
+INTERNAL TRACKING (do NOT include any of this in your response):
+Coverage: {coverage}
+Progress: {exchange_count}/{target_exchanges} exchanges
 
-PROGRESS: {exchange_count}/{target_exchanges} exchanges
-
-If coverage is good and you've hit the target, suggest wrapping up."""
+If coverage is good and you've hit the target, suggest wrapping up conversationally."""
 
 SYNTHESIS_PROMPT = """Based on this interview for "{job_title}", create a KSAO analysis.
 
@@ -47,7 +49,9 @@ COVERAGE_AREAS = {
 }
 
 def format_coverage(coverage):
-    return "\n".join([f"- {a['name']}: {'✓' if a['covered'] else '○'}" for a in coverage.values()])
+    covered = [a['name'] for a in coverage.values() if a['covered']]
+    not_covered = [a['name'] for a in coverage.values() if not a['covered']]
+    return f"Explored: {', '.join(covered) if covered else 'None yet'}. Still need: {', '.join(not_covered) if not_covered else 'All covered'}."
 
 def update_coverage(msg, coverage):
     m = msg.lower()
@@ -68,7 +72,20 @@ def update_coverage(msg, coverage):
 def call_llm(messages, system_prompt):
     try:
         resp = client.messages.create(model=MODEL, max_tokens=500, system=system_prompt, messages=messages)
-        return resp.content[0].text
+        text = resp.content[0].text
+        
+        # Strip any leaked system prompt content
+        for marker in ["COVERAGE", "PROGRESS:", "INTERNAL", "exchanges", "◐", "○", "✓"]:
+            if marker in text:
+                text = text.split(marker)[0].strip()
+        
+        # Remove any trailing incomplete sentences
+        if text and text[-1] not in '.?!':
+            last_period = max(text.rfind('.'), text.rfind('?'), text.rfind('!'))
+            if last_period > 0:
+                text = text[:last_period + 1]
+        
+        return text if text else "Could you tell me more about that?"
     except Exception as e:
         return f"Technical issue: {str(e)[:50]}"
 
