@@ -7,6 +7,25 @@ import streamlit as st
 import anthropic
 import json
 
+# === PASSWORD PROTECTION ===
+def check_password():
+    def password_entered():
+        if st.session_state["password"] == st.secrets["app_password"]:
+            st.session_state["authenticated"] = True
+            del st.session_state["password"]
+        else:
+            st.session_state["authenticated"] = False
+
+    if "authenticated" not in st.session_state:
+        st.text_input("Password", type="password", on_change=password_entered, key="password")
+        st.stop()
+    elif not st.session_state["authenticated"]:
+        st.text_input("Password", type="password", on_change=password_entered, key="password")
+        st.error("Incorrect password")
+        st.stop()
+
+check_password()
+
 MODEL = "claude-sonnet-4-20250514"
 TARGET_EXCHANGES = 7
 client = anthropic.Anthropic()
